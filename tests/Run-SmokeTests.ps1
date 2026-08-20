@@ -13,10 +13,23 @@ foreach($file in $files){
     [void][System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
     if($errors.Count -gt 0){throw "Syntax error in $file : $($errors[0].Message)"}
 }
-if(-not(Test-Path -LiteralPath (Join-Path $root 'Start-AndroidGamePerfKit.cmd'))){throw 'One-click launcher CMD is missing.'}
+$cmdPath=Join-Path $root 'Start-AndroidGamePerfKit.cmd'
+if(Test-Path -LiteralPath $cmdPath){throw 'CMD launcher must not be distributed because double-clicking a batch file always creates a console flash.'}
+$vbsPath=Join-Path $root 'Start-AndroidGamePerfKit.vbs'
+if(-not(Test-Path -LiteralPath $vbsPath)){throw 'No-flash VBS launcher is missing.'}
+$vbsSource=Get-Content -LiteralPath $vbsPath -Raw
+foreach($requiredVbsText in @('WScript.Shell','CurrentDirectory','powershell.exe','-ExecutionPolicy Bypass','AndroidGamePerfKit-Launcher.ps1','shell.Run command, 1, False')){if($vbsSource -notmatch [regex]::Escape($requiredVbsText)){throw "VBS launcher capability is missing: $requiredVbsText"}}
 $launcherSource=Get-Content -LiteralPath (Join-Path $root 'AndroidGamePerfKit-Launcher.ps1') -Raw
 foreach($requiredText in @('Update-LauncherDeviceInfo','Set-LauncherGameAndDevice','Invoke-RuntimeLongrun','Show-LatestReport','runtime-config.json','gameName')){
     if($launcherSource -notmatch [regex]::Escape($requiredText)){throw "Runtime launcher capability is missing: $requiredText"}
+}
+foreach($cancelGuard in @('HotkeyCancel','IsStopKeyPhysicallyDown','Reset-LauncherStopKey','Wait-LauncherProcess','0x1B','0x0001','KeyAvailable')){
+    if($launcherSource -notmatch [regex]::Escape($cancelGuard)){throw "Controlled Esc guard is missing: $cancelGuard"}
+}
+$smokeFunction=[regex]::Match($launcherSource,'(?s)function Invoke-SmokeTest \{.*?\n\}').Value
+if($smokeFunction -notmatch 'Wait-LauncherProcess' -or $smokeFunction -match '&\s*powershell\.exe'){throw 'Offline smoke tests must use the same controlled Esc process monitor.'}
+foreach($forbiddenCtrlCHandler in @('TreatControlCAsInput','SetConsoleCtrlHandler','controlDown && cDown','0x7B')){
+    if($launcherSource -match [regex]::Escape($forbiddenCtrlCHandler)){throw "Ctrl+C must remain native and unhandled: $forbiddenCtrlCHandler"}
 }
 if($launcherSource -match 'Select-LauncherConfig|RememberedConfig'){throw 'Launcher must not require users to select a JSON profile.'}
 $caseSource=Get-Content -LiteralPath (Join-Path $root 'lib\AndroidGamePerfKit.Cases.psm1') -Raw

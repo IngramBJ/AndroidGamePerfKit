@@ -19,56 +19,27 @@ $script:DeviceInfo=[pscustomobject]@{connected=$false;serial='';manufacturer='';
 
 Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Core.psm1') -Force
 
-if(-not ('AndroidGamePerfKit.ConsoleCancel' -as [type])){
+if(-not ('AndroidGamePerfKit.HotkeyCancel' -as [type])){
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 
 namespace AndroidGamePerfKit {
-    public static class ConsoleCancel {
-        private enum CtrlType : uint {
-            CtrlC = 0,
-            CtrlBreak = 1,
-            CtrlClose = 2,
-            CtrlLogoff = 5,
-            CtrlShutdown = 6
-        }
-
-        private delegate bool HandlerRoutine(CtrlType ctrlType);
-        private static HandlerRoutine handler;
-        public static volatile bool Requested;
-
-        [DllImport("Kernel32")]
-        private static extern bool SetConsoleCtrlHandler(HandlerRoutine handler, bool add);
-
+    public static class HotkeyCancel {
         [DllImport("user32.dll")]
         private static extern short GetAsyncKeyState(int virtualKey);
 
-        private static bool HandleControl(CtrlType ctrlType) {
-            if(ctrlType == CtrlType.CtrlC || ctrlType == CtrlType.CtrlBreak) {
-                Requested = true;
-                return true;
-            }
-            return false;
-        }
-
-        public static bool Install() {
-            Requested = false;
-            if(handler == null) handler = HandleControl;
-            return SetConsoleCtrlHandler(handler, true);
-        }
-
         public static bool IsCancellationRequested() {
-            if(Requested) return true;
-            bool controlDown = (GetAsyncKeyState(0x11) & 0x8000) != 0;
-            bool cDown = (GetAsyncKeyState(0x43) & 0x8000) != 0;
-            bool f12Down = (GetAsyncKeyState(0x7B) & 0x8000) != 0;
-            return (controlDown && cDown) || f12Down;
+            short state = GetAsyncKeyState(0x1B); // VK_ESCAPE
+            return (state & 0x8000) != 0 || (state & 0x0001) != 0;
         }
 
-        public static void Uninstall() {
-            if(handler != null) SetConsoleCtrlHandler(handler, false);
-            Requested = false;
+        public static bool IsStopKeyPhysicallyDown() {
+            return (GetAsyncKeyState(0x1B) & 0x8000) != 0;
+        }
+
+        public static void Reset() {
+            GetAsyncKeyState(0x1B); // clear the historical short-press bit
         }
     }
 }
@@ -78,7 +49,7 @@ namespace AndroidGamePerfKit {
 function Write-LauncherHeader {
     Clear-Host
     Write-Host '============================================================' -ForegroundColor DarkCyan
-    Write-Host ' AndroidGamePerfKit v1.4.0 - 运行时配置控制台' -ForegroundColor Cyan
+    Write-Host ' AndroidGamePerfKit v1.4.6 - 运行时配置控制台' -ForegroundColor Cyan
     Write-Host '============================================================' -ForegroundColor DarkCyan
     if($script:CurrentProfile){
         $deviceText=if($script:DeviceInfo.connected){"$($script:CurrentProfile.deviceLabel) [$($script:DeviceInfo.serial)]"}else{'未连接或尚未识别'}
@@ -250,6 +221,52 @@ function Stop-LauncherProcessTree {
     try{[void]$Process.WaitForExit(3000)}catch{}
 }
 
+function Reset-LauncherStopKey {
+    # GetAsyncKeyState keeps a historical "pressed since last check" bit.
+    # Clear it before every new child task so Esc can never leak into the next item.
+    try{[AndroidGamePerfKit.HotkeyCancel]::Reset()}catch{}
+    try{while([Console]::KeyAvailable){[void][Console]::ReadKey($true)}}catch{}
+}
+
+function Wait-LauncherProcess {
+    param([Parameter(Mandatory=$true)][System.Diagnostics.Process]$Process)
+    $exitCode=1;$cancelled=$false
+    try{
+        # Windows PowerShell 5.1 requires the native process handle to be materialized before ExitCode is reliable.
+        $processHandle=$Process.Handle
+        $testCancelDeadline=$null
+        if($env:GPK_LAUNCHER_TEST_CANCEL_MS -match '^\d+$'){$testCancelDeadline=[DateTime]::UtcNow.AddMilliseconds([int]$env:GPK_LAUNCHER_TEST_CANCEL_MS)}
+        while($true){
+            $cancelKey=$false
+            try{$cancelKey=[AndroidGamePerfKit.HotkeyCancel]::IsCancellationRequested()}catch{}
+            if($cancelKey -or ($testCancelDeadline -and [DateTime]::UtcNow -ge $testCancelDeadline)){$cancelled=$true;break}
+            if($Process.WaitForExit(100)){break}
+            $Process.Refresh()
+        }
+        try{if([AndroidGamePerfKit.HotkeyCancel]::IsCancellationRequested()){$cancelled=$true}}catch{}
+        if($cancelled){
+            Write-Host ''
+            Write-Host '已收到Esc中止指令，正在终止本轮任务及其子进程...' -ForegroundColor Yellow
+            Stop-LauncherProcessTree $Process
+            $exitCode=130
+        }else{
+            $Process.WaitForExit()
+            $exitCode=$Process.ExitCode
+        }
+    } finally {
+        if($cancelled){
+            $releaseDeadline=[DateTime]::UtcNow.AddSeconds(2)
+            while([DateTime]::UtcNow -lt $releaseDeadline){
+                $keysDown=$false;try{$keysDown=[AndroidGamePerfKit.HotkeyCancel]::IsStopKeyPhysicallyDown()}catch{}
+                if(-not $keysDown){break};Start-Sleep -Milliseconds 50
+            }
+            Reset-LauncherStopKey
+        }
+        try{$Process.Dispose()}catch{}
+    }
+    return [pscustomobject]@{ExitCode=$exitCode;Cancelled=$cancelled}
+}
+
 function Invoke-KitChild {
     param(
         [Parameter(Mandatory=$true)][ValidateSet('preflight','run','cleanup')][string]$Command,
@@ -266,38 +283,16 @@ function Invoke-KitChild {
     if($Perfetto){$childArgs+=@('-Perfetto','-PerfettoProfile',$PerfettoProfile,'-PerfettoDurationSec',[string]$PerfettoDurationSec)}
     Write-Host ''
     if($Recovery){Write-Host '正在执行自动恢复...' -ForegroundColor Cyan}
-    else{Write-Host '正在启动测试。测试过程中按 Ctrl+C（或 F12）可中止本轮并返回菜单。' -ForegroundColor Cyan}
+    else{
+        Write-Host '正在启动测试。按 Esc 可安全终止本轮并返回主菜单。' -ForegroundColor Cyan
+        Write-Host '注意：Ctrl+C 保持PowerShell默认行为，会直接关闭整个工具。' -ForegroundColor DarkYellow
+    }
     $quotedArgs=@($childArgs|ForEach-Object{ConvertTo-LauncherNativeArgument ([string]$_)})
     $argumentLine=$quotedArgs -join ' '
-    $proc=$null;$exitCode=1;$cancelled=$false;$handlerInstalled=$false
-    try{
-        try{$handlerInstalled=[AndroidGamePerfKit.ConsoleCancel]::Install()}catch{$handlerInstalled=$false}
-        $proc=Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentLine -NoNewWindow -PassThru
-        # Windows PowerShell 5.1 requires the native process handle to be materialized before ExitCode is reliable.
-        $processHandle=$proc.Handle
-        $testCancelDeadline=$null
-        if($env:GPK_LAUNCHER_TEST_CANCEL_MS -match '^\d+$'){$testCancelDeadline=[DateTime]::UtcNow.AddMilliseconds([int]$env:GPK_LAUNCHER_TEST_CANCEL_MS)}
-        while($true){
-            $cancelKey=$false
-            try{$cancelKey=[AndroidGamePerfKit.ConsoleCancel]::IsCancellationRequested()}catch{}
-            if($cancelKey -or ($testCancelDeadline -and [DateTime]::UtcNow -ge $testCancelDeadline)){$cancelled=$true;break}
-            if($proc.WaitForExit(100)){break}
-            $proc.Refresh()
-        }
-        try{if([AndroidGamePerfKit.ConsoleCancel]::IsCancellationRequested()){$cancelled=$true}}catch{}
-        if($cancelled){
-            Write-Host ''
-            Write-Host '已收到中止指令，正在终止本轮测试及其子进程...' -ForegroundColor Yellow
-            Stop-LauncherProcessTree $proc
-            $exitCode=130
-        }else{
-            $proc.WaitForExit()
-            $exitCode=$proc.ExitCode
-        }
-    } finally {
-        if($handlerInstalled){try{[AndroidGamePerfKit.ConsoleCancel]::Uninstall()}catch{}}
-        if($proc){try{$proc.Dispose()}catch{}}
-    }
+    Reset-LauncherStopKey
+    $proc=Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentLine -NoNewWindow -PassThru
+    $outcome=Wait-LauncherProcess -Process $proc
+    $exitCode=[int]$outcome.ExitCode;$cancelled=[bool]$outcome.Cancelled
     Write-Host ''
     if($cancelled){
         Write-Host '本轮测试已中止。' -ForegroundColor Yellow
@@ -312,10 +307,15 @@ function Invoke-KitChild {
 }
 
 function Invoke-SmokeTest {
-    Write-Host '正在运行离线自检...' -ForegroundColor Cyan
-    & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'tests\Run-SmokeTests.ps1') | Out-Host
-    $exitCode=$LASTEXITCODE
-    if($exitCode -eq 0){Write-Host '离线自检通过。' -ForegroundColor Green}else{Write-Host '离线自检失败，请先处理上方错误。' -ForegroundColor Red}
+    Write-Host '正在运行离线自检。按 Esc 可安全终止并返回主菜单。' -ForegroundColor Cyan
+    $smokeArgs=@('-NoLogo','-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $PSScriptRoot 'tests\Run-SmokeTests.ps1'))
+    $argumentLine=@($smokeArgs|ForEach-Object{ConvertTo-LauncherNativeArgument ([string]$_)}) -join ' '
+    Reset-LauncherStopKey
+    $proc=Start-Process -FilePath 'powershell.exe' -ArgumentList $argumentLine -NoNewWindow -PassThru
+    $outcome=Wait-LauncherProcess -Process $proc
+    $exitCode=[int]$outcome.ExitCode
+    if($outcome.Cancelled){Write-Host '离线自检已中止，已返回主菜单。' -ForegroundColor Yellow}
+    elseif($exitCode -eq 0){Write-Host '离线自检通过。' -ForegroundColor Green}else{Write-Host '离线自检失败，请先处理上方错误。' -ForegroundColor Red}
     return $exitCode
 }
 

@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$script:GpkVersion = '1.4.0'
+$script:GpkVersion = '1.4.6'
 $script:AdbExe = $null
 $script:DeviceSerial = $null
 

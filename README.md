@@ -2,7 +2,7 @@
 
 AndroidGamePerfKit 是一个面向 Android 游戏的轻量性能测试工具包，重点兼容 Windows PowerShell 与 ADB。日常使用采用运行时配置：工具自动读取设备信息和前台游戏，测试时直接在控制台输入时长、坐标、标记点等参数，不需要手工编辑JSON。
 
-当前版本：1.4.0。设备序列号、厂商、型号、分辨率和前台游戏包名可自动识别；常用用例参数在启动测试时输入并记住上一次值。每轮自动生成可双击查看的离线HTML报告，并按游戏、用例、时间和设备归档。`.state/runtime-config.json` 由工具自动维护，只用于把运行时参数传给采集核心，测试人员不需要打开或修改它。
+当前版本：1.4.6（以1.4.0为功能基线重新修改，1.4.1和1.4.2已放弃）。设备序列号、厂商、型号、分辨率和前台游戏包名可自动识别；常用用例参数在启动测试时输入并记住上一次值。每轮自动生成可双击查看的离线HTML报告，并按游戏、用例、时间和设备归档。`.state/runtime-config.json` 由工具自动维护，只用于把运行时参数传给采集核心，测试人员不需要打开或修改它。
 
 SurfaceFlinger 直方图解析同时兼容 AOSP 的 `presentToPresentHistogram` 和华为/HarmonyOS 的 `present2present histogram` 格式。
 
@@ -10,10 +10,10 @@ Perfetto作为可选的短时诊断模式集成。控制台选择“Perfetto专�
 
 ## 一体化菜单（推荐）
 
-日常测试不需要再手工输入PowerShell命令。双击工具根目录中的：
+日常测试不需要再手工输入PowerShell命令。推荐双击工具根目录中的无闪窗入口：
 
 ```text
-Start-AndroidGamePerfKit.cmd
+Start-AndroidGamePerfKit.vbs
 ```
 
 首次使用先按 `S`，把目标游戏切到手机前台后让工具自动识别设备和包名，再输入便于辨认的游戏显示名称并确认目标FPS。战斗、首次加载、内存恢复、长稳、省电、后台竞争和低存储会在开始前询问本轮参数；高风险操作仍要求二次确认。
@@ -27,7 +27,9 @@ Start-AndroidGamePerfKit.cmd
 - `dumpsys` 与 logcat：电池、电源、温控、PSS、存储、启动时间和异常证据；
 - Perfetto 不作为普通测试的必需项，避免重型 Trace 和 Unity ATrace marker 洪泛。
 
-测试运行期间按 `Ctrl+C` 会中止当前用例并返回菜单，不会直接关闭整个启动器。若当前终端拦截了 Ctrl+C，也可按 `F12` 达到相同效果。如果本轮已经修改设备状态或启动采集器，启动器会先尝试自动 cleanup；要关闭工具请在主菜单输入 `0`。
+测试或离线自检运行期间按 `Esc` 会安全终止当前项目、结束其子进程、按需尝试cleanup并返回主菜单。短按也会被记录，不需要一直按住；每个新任务开始前会清除历史按键状态，因此Esc不会延迟到下一项才生效。`Ctrl+C` 不再由工具捕获，保持PowerShell默认行为：直接关闭整个工具；这种关闭方式可能来不及恢复省电模式、电池模拟、占位文件或后台采集器，因此正常中止请使用 `Esc`。发行包仅保留VBS入口，不再提供CMD，所以启动时不会出现批处理黑窗闪烁。
+
+VBS启动后会创建一个正常可见的PowerShell窗口，并读取本机运行时配置。菜单模式还会尝试通过ADB进行只读设备识别（设备列表、厂商、型号、分辨率和前台包名）；不会启动测试、创建结果目录或修改手机状态。只有选择具体测试项目后才进入相应用例。
 
 ## 运行要求
 
@@ -38,7 +40,7 @@ Start-AndroidGamePerfKit.cmd
 - Perfetto诊断需要Android 10/API 29或更高版本，并且设备提供`perfetto`命令；
 - `storage-5gb` 需要设备 shell 提供 `fallocate`。工具不会自动退化到会产生大量真实写入的 `dd`。
 
-如果使用推荐的双击菜单，不需要修改执行策略。只有直接从 PowerShell 调用 `.ps1` 时，才建议在当前窗口临时允许脚本：
+如果使用推荐的VBS双击入口，不需要修改执行策略。只有直接从 PowerShell 调用 `.ps1` 时，才建议在当前窗口临时允许脚本：
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -52,12 +54,12 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-CleanRelease.ps1
 ```
 
-脚本会先运行离线自检，然后生成 `AndroidGamePerfKit-v<版本>-clean.zip`。发行包自动排除全部测试结果、运行时设备/游戏会话、项目专用配置、已有ZIP和Trace，只保留通用示例配置及全部测试能力。生成后可将这个 `-clean.zip` 上传到网盘、企业聊天、GitHub Release或内部制品库。接收方解压后双击 `Start-AndroidGamePerfKit.cmd`，按 `S` 识别自己的设备和游戏即可。
+脚本会先运行离线自检，然后生成 `AndroidGamePerfKit-v<版本>-clean.zip`。发行包自动排除全部测试结果、运行时设备/游戏会话、项目专用配置、已有ZIP和Trace，只保留通用示例配置及全部测试能力。生成后可将这个 `-clean.zip` 上传到网盘、企业聊天、GitHub Release或内部制品库。接收方解压后双击 `Start-AndroidGamePerfKit.vbs`，按 `S` 识别自己的设备和游戏即可。
 
 ## 三步开始
 
 1. 连接并授权手机，打开目标游戏，让它停留在前台。
-2. 双击 `Start-AndroidGamePerfKit.cmd`，按 `S` 自动识别设备和前台游戏，并输入游戏显示名称与目标FPS。
+2. 双击 `Start-AndroidGamePerfKit.vbs`，按 `S` 自动识别设备和前台游戏，并输入游戏显示名称与目标FPS。
 3. 选择测试用例，根据控制台问题输入本轮时长、时间点、坐标或后台包名，然后开始测试。
 
 每次结果固定输出到：

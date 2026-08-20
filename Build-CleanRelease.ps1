@@ -38,7 +38,7 @@ $files=@(Get-ChildItem -LiteralPath $kitRoot -Recurse -File|Where-Object{
     -not $excluded
 })
 
-foreach($file in $files|Where-Object{$_.Extension -in @('.ps1','.psm1','.cmd','.json','.md','.txt','.pbtxt','.sh')}){
+foreach($file in $files|Where-Object{$_.Extension -in @('.ps1','.psm1','.cmd','.vbs','.json','.md','.txt','.pbtxt','.sh')}){
     $text=Get-Content -LiteralPath $file.FullName -Raw -ErrorAction SilentlyContinue
     if($text -match '(?i)[A-Z]:\\Users\\[^\\\r\n]+' ){throw "Possible absolute user path remains in: $($file.FullName)"}
     foreach($match in [regex]::Matches($text,'(?i)"deviceSerial"\s*:\s*"([^"\s]+)"')){
@@ -67,7 +67,7 @@ try{
 }finally{$stream.Dispose()}
 
 $required=@(
-    'AndroidGamePerfKit/Start-AndroidGamePerfKit.cmd',
+    'AndroidGamePerfKit/Start-AndroidGamePerfKit.vbs',
     'AndroidGamePerfKit/configs/generic-example.json',
     'AndroidGamePerfKit/lib/AndroidGamePerfKit.Core.psm1',
     'AndroidGamePerfKit/perfetto/profiles/balanced.pbtxt'
