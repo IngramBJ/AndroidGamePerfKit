@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AndroidGamePerfKit configuration",
+  "type": "object",
+  "required": ["packageName", "targetFps", "deviceLabel", "defaults", "cases"],
+  "properties": {
+    "profileName": { "type": "string" },
+    "gameName": { "type": "string", "minLength": 1 },
+    "packageName": { "type": "string", "pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+$" },
+    "activity": { "type": "string", "default": "auto" },
+    "targetFps": { "type": "number", "exclusiveMinimum": 0 },
+    "deviceLabel": { "type": "string", "minLength": 1 },
+    "deviceSerial": { "type": "string" },
+    "adbPath": { "type": "string" },
+    "defaults": {
+      "type": "object",
+      "required": ["durationSec", "sampleIntervalSec"],
+      "properties": {
+        "durationSec": { "type": "integer", "minimum": 1 },
+        "sampleIntervalSec": { "type": "number", "minimum": 0.5 },
+        "maxCollectorSec": { "type": "integer", "minimum": 60 },
+        "interactivePrompts": { "type": "boolean" }
+      }
+    },
+    "cases": { "type": "object" }
+  }
+}

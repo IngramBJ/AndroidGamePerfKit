@@ -1,0 +1,10 @@
+statsStart = 100
+statsEnd = 160
+layerName = SurfaceView[com.example.game/com.example.game.MainActivity](BLAST)#42
+totalFrames = 1800
+averageFPS = 30.000
+presentToPresentHistogram = 16: 0, 33: 1600, 50: 150, 67: 35, 100: 10, 150: 5
+layerName = StatusBar#1
+totalFrames = 3600
+averageFPS = 60.000
+

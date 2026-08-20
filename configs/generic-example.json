@@ -1,0 +1,62 @@
+{
+  "$schema": "../config.schema.json",
+  "profileName": "Generic Android game",
+  "gameName": "Generic-Game",
+  "packageName": "com.example.game",
+  "activity": "auto",
+  "targetFps": 60,
+  "deviceLabel": "lab-device-01",
+  "deviceSerial": "",
+  "adbPath": "",
+  "defaults": {
+    "durationSec": 60,
+    "sampleIntervalSec": 1,
+    "maxCollectorSec": 14400,
+    "interactivePrompts": true
+  },
+  "cases": {
+    "battle60s": {
+      "durationSec": 60
+    },
+    "longrun": {
+      "durationSec": 1800,
+      "automation": {
+        "enabled": false,
+        "battleSeconds": 60,
+        "taps": []
+      }
+    },
+    "memoryRecovery": {
+      "durationSec": 600,
+      "recoveryNodesSec": [0, 30, 60, 180],
+      "nonInteractiveExitDelaySec": 5
+    },
+    "batterySaver": {
+      "beforeSec": 20,
+      "afterSec": 20
+    },
+    "storage5GB": {
+      "targetFreeGb": 5,
+      "minimumSafeFreeGb": 3.5
+    },
+    "firstLoad": {
+      "durationSec": 30,
+      "firstMarkerSec": 6,
+      "secondMarkerSec": 18
+    },
+    "manualMarker": {
+      "durationSec": 30,
+      "offsetsSec": [5, 15]
+    },
+    "backgroundPressure": {
+      "durationSec": 60,
+      "packages": [],
+      "settleSec": 10,
+      "maxMemAvailableMiB": 1200
+    },
+    "coldStartFirstBattle": {
+      "nonInteractiveHomeDelaySec": 12,
+      "nonInteractiveBattleDelaySec": 8
+    }
+  }
+}

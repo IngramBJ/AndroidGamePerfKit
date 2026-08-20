@@ -1,0 +1,29 @@
+statsStart = 1066486
+statsEnd = 1066518
+layerName = SurfaceView[com.example.huawei.game/com.unity3d.player.UnityPlayerActivity](BLAST)#810
+totalFrames = 310
+averageFPS = 15.092
+present2present histogram:
+16ms=52
+33ms=157
+50ms=49
+66ms=14
+86ms=3
+102ms=9
+118ms=6
+134ms=5
+150ms=1
+200ms=2
+250ms=2
+300ms=1
+450ms=1
+600ms=2
+650ms=1
+950ms=1
+1000ms=4
+frameDuration histogram:
+16ms=300
+33ms=10
+layerName = StatusBar#1
+totalFrames = 1920
+averageFPS = 60.000

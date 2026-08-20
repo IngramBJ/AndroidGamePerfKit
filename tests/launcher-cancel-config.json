@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "profileName": "Launcher cancellation test",
+  "packageName": "com.example.game",
+  "activity": "auto",
+  "targetFps": 30,
+  "deviceLabel": "MOCK-CANCEL",
+  "deviceSerial": "MOCK123",
+  "adbPath": "tests\\mock-adb.ps1",
+  "defaults": {
+    "durationSec": 60,
+    "sampleIntervalSec": 1,
+    "maxCollectorSec": 120
+  },
+  "cases": {
+    "battle60s": { "durationSec": 60 },
+    "longrun": { "durationSec": 300, "automation": { "enabled": false, "battleSeconds": 60, "taps": [] } },
+    "memoryRecovery": { "durationSec": 60, "recoveryNodesSec": [0, 5], "nonInteractiveExitDelaySec": 1 },
+    "batterySaver": { "beforeSec": 5, "afterSec": 5 },
+    "storage5GB": { "targetFreeGb": 5, "minimumSafeFreeGb": 3.5 },
+    "firstLoad": { "durationSec": 15, "firstMarkerSec": 3, "secondMarkerSec": 8 },
+    "manualMarker": { "durationSec": 15, "offsetsSec": [3, 8] },
+    "backgroundPressure": { "durationSec": 10, "packages": [], "settleSec": 1, "maxMemAvailableMiB": 1200 },
+    "coldStartFirstBattle": { "nonInteractiveHomeDelaySec": 1, "nonInteractiveBattleDelaySec": 1 }
+  }
+}
