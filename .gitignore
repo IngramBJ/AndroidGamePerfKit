@@ -1,0 +1,18 @@
+# Runtime state and test output (may contain device/game information)
+.state/
+results/
+
+# Captures and generated archives
+*.perfetto-trace
+*.trace
+*.log
+*.tmp
+*.zip
+!dist/*.zip
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
