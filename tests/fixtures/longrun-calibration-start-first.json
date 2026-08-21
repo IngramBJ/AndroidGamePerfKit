@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "toolVersion": "1.5.3",
+  "kind": "full",
+  "gameName": "Mock Game",
+  "packageName": "com.example.game",
+  "display": {
+    "logicalWidth": 1080,
+    "logicalHeight": 2400,
+    "resolution": "1080x2400",
+    "rotation": 0
+  },
+  "startWithFirstTap": true,
+  "taps": [
+    { "step": 1, "name": "start battle", "x": 540, "y": 2000, "delayMs": 100 },
+    { "step": 2, "name": "continue", "x": 520, "y": 1900, "delayMs": 100 },
+    { "step": 3, "name": "enter stage", "x": 530, "y": 1950, "delayMs": 100 }
+  ],
+  "battleTimesSec": [15, 16, 17],
+  "recommendedBattleSeconds": 22
+}

@@ -1,0 +1,11 @@
+[  100.100000] /dev/input/event6: EV_ABS       ABS_MT_TRACKING_ID   0000002a
+[  100.100100] /dev/input/event6: EV_ABS       ABS_MT_POSITION_X    0000021c
+[  100.100200] /dev/input/event6: EV_ABS       ABS_MT_POSITION_Y    000004b0
+[  100.120000] /dev/input/event6: EV_SYN       SYN_REPORT           00000000
+[  100.180000] /dev/input/event6: EV_ABS       ABS_MT_TRACKING_ID   ffffffff
+[  100.180100] /dev/input/event6: EV_SYN       SYN_REPORT           00000000
+[  170.500000] /dev/input/event6: EV_ABS       ABS_MT_TRACKING_ID   0000002b
+[  170.500100] /dev/input/event6: EV_ABS       ABS_MT_POSITION_X    00000300
+[  170.500200] /dev/input/event6: EV_ABS       ABS_MT_POSITION_Y    00000640
+[  170.600000] /dev/input/event6: EV_ABS       ABS_MT_TRACKING_ID   ffffffff
+[  170.600100] /dev/input/event6: EV_SYN       SYN_REPORT           00000000

@@ -1,6 +1,8 @@
 # Runtime state and test output (may contain device/game information)
 .state/
 results/
+batch-reports/
+Longrun-Calibrator/calibration-results/
 
 # Captures and generated archives
 *.perfetto-trace

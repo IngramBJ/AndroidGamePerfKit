@@ -2,7 +2,7 @@
 
 AndroidGamePerfKit 是一个面向 Android 游戏的轻量性能测试工具包，重点兼容 Windows PowerShell 与 ADB。日常使用采用运行时配置：工具自动读取设备信息和前台游戏，测试时直接在控制台输入时长、坐标、标记点等参数，不需要手工编辑JSON。
 
-当前版本：1.4.6（以1.4.0为功能基线重新修改，1.4.1和1.4.2已放弃）。设备序列号、厂商、型号、分辨率和前台游戏包名可自动识别；常用用例参数在启动测试时输入并记住上一次值。每轮自动生成可双击查看的离线HTML报告，并按游戏、用例、时间和设备归档。`.state/runtime-config.json` 由工具自动维护，只用于把运行时参数传给采集核心，测试人员不需要打开或修改它。
+当前版本：1.6.0。设备序列号、厂商、型号、分辨率和前台游戏包名可自动识别；常用用例参数在启动测试时输入并记住上一次值。每轮自动生成可双击查看的离线HTML报告，并按游戏、用例、时间和设备归档。工具还能一键扫描历史结果并生成适合Excel、AI和人工查看的轻量批量汇总包。`.state/runtime-config.json` 由工具自动维护，只用于把运行时参数传给采集核心，测试人员不需要打开或修改它。
 
 SurfaceFlinger 直方图解析同时兼容 AOSP 的 `presentToPresentHistogram` 和华为/HarmonyOS 的 `present2present histogram` 格式。
 
@@ -14,6 +14,12 @@ Perfetto作为可选的短时诊断模式集成。控制台选择“Perfetto专�
 
 ```text
 Start-AndroidGamePerfKit.vbs
+```
+
+长稳坐标和战斗时长校准使用独立入口，不会开始性能采集：
+
+```text
+Start-Longrun-Calibrator.vbs
 ```
 
 首次使用先按 `S`，把目标游戏切到手机前台后让工具自动识别设备和包名，再输入便于辨认的游戏显示名称并确认目标FPS。战斗、首次加载、内存恢复、长稳、省电、后台竞争和低存储会在开始前询问本轮参数；高风险操作仍要求二次确认。
@@ -54,7 +60,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\Build-CleanRelease.ps1
 ```
 
-脚本会先运行离线自检，然后生成 `AndroidGamePerfKit-v<版本>-clean.zip`。发行包自动排除全部测试结果、运行时设备/游戏会话、项目专用配置、已有ZIP和Trace，只保留通用示例配置及全部测试能力。生成后可将这个 `-clean.zip` 上传到网盘、企业聊天、GitHub Release或内部制品库。接收方解压后双击 `Start-AndroidGamePerfKit.vbs`，按 `S` 识别自己的设备和游戏即可。
+脚本会先运行离线自检，然后生成 `AndroidGamePerfKit-v<版本>-clean.zip`。发行包自动排除全部测试结果、校准结果、运行时设备/游戏会话、项目专用配置、已有ZIP和Trace，只保留通用示例配置及全部测试能力。生成后可将这个 `-clean.zip` 上传到网盘、企业聊天、GitHub Release或内部制品库。接收方解压后双击 `Start-AndroidGamePerfKit.vbs`，按 `S` 识别自己的设备和游戏即可。
 
 ## 三步开始
 
@@ -74,6 +80,34 @@ results/<游戏名称>/<case>/<yyyyMMdd-HHmmss>_<设备标签>/
 results/<游戏名称>/<case>/<yyyyMMdd-HHmmss>_<设备标签>.zip
 ```
 
+## 一键批量汇总与填表
+
+主菜单选择 `[17] 一键汇总全部测试`。该功能不要求连接手机，只递归读取 `results` 中每轮测试的 `metadata.json` 和 `summary.json`，不会读取或复制大型logcat、dumpsys、`samples.csv`、Perfetto Trace。完成后自动打开批量HTML报告，并输出：
+
+```text
+batch-reports/<yyyyMMdd-HHmmss>/
+├─ batch-summary.csv       Excel或测试记录表的数据源，每次测试一行
+├─ batch-summary.json      适合程序和AI批量分析
+├─ batch-report.html       可搜索的本地总览
+└─ anomalies.txt           失败、警告和待复核记录
+
+batch-reports/<yyyyMMdd-HHmmss>.zip
+```
+
+CSV/JSON包含游戏、包名、设备、用例、时间、测试状态、数据质量、平均FPS、P95/P99、长帧、CPU、UnityMain、RSS、可用内存、Swap、温度、Perfetto状态、自动判定、警告和原结果路径。需要AI填表时，通常只需发送这个小型ZIP和目标Excel模板；只有异常RUN需要进一步定位时，再补充对应的完整结果ZIP。
+
+高级命令行用法：
+
+```powershell
+.\AndroidGamePerfKit.ps1 -Command batch
+```
+
+也可扫描另一个结果目录：
+
+```powershell
+.\AndroidGamePerfKit.ps1 -Command batch -ResultsRoot D:\ArchivedGamePerfResults
+```
+
 ## 新设备怎么接入
 
 连接新设备后按 `S`。工具自动读取序列号、厂商、型号和分辨率，并更新报告设备标签；旧设备序列号不会阻止单台新设备接入。然后运行预检，检查 RAM、存储、电池、thermalservice、SurfaceFlinger timestats、`fallocate`、`unzip` 和 `awk`。
@@ -82,7 +116,7 @@ results/<游戏名称>/<case>/<yyyyMMdd-HHmmss>_<设备标签>.zip
 
 ## 新游戏怎么接入
 
-先把新游戏切到手机前台，再按 `S`。工具从 `mResumedActivity` 识别包名，Activity继续自动解析；若OEM没有暴露前台包名，控制台会让你直接输入。游戏显示名称和目标FPS也在同一流程中输入。显示名称会成为结果目录的第一层，例如 `results/Demo-Game/...`。长稳坐标、后台应用、测试时长等都在选择对应测试时设置。
+先把新游戏切到手机前台，再按 `S`。工具会依次探测 Activity 与 Window 服务，兼容 `topResumedActivity`、`mResumedActivity`、`mCurrentFocus`、`mFocusedApp` 和顶部Activity等常见OEM格式；Activity继续自动解析。若系统没有向ADB暴露前台包名，控制台会让你直接输入。游戏显示名称和目标FPS也在同一流程中输入。显示名称会成为结果目录的第一层，例如 `results/Demo-Game/...`。长稳坐标、后台应用、测试时长等都在选择对应测试时设置。
 
 `configs` 目录仅保留给直接调用PowerShell或CI的高级兼容模式，双击菜单不依赖人工JSON配置。
 
@@ -110,13 +144,39 @@ results/<游戏名称>/<case>/<yyyyMMdd-HHmmss>_<设备标签>.zip
 
 ### longrun
 
-菜单会现场询问总分钟数、每局秒数和点击坐标。自动化关闭时只采集、由人操作；开启时按本轮输入的 `battleSeconds` 和点击步骤循环。换分辨率、游戏或 UI 后必须重新校准坐标。
+菜单会现场询问总分钟数、每局秒数和点击坐标。自动化关闭时只采集、由人操作；开启时按本轮输入的 `battleSeconds` 和点击步骤循环。点击步骤可从校准JSON/TXT导入、粘贴一行坐标序列或手工输入。导入时会比较当前分辨率和rotation，状态不一致默认拒绝复用。
 
 ```powershell
 .\AndroidGamePerfKit.ps1 -Command run -Case longrun -Config .\configs\my-game.json
 ```
 
 手机端采样在独立 shell 进程中执行；活动运行状态记录在 `.state/active-run.json`。即使上轮异常退出，也可先运行统一 cleanup，移除残留采集器。
+
+如果点击序列第1步就是“开战”，请选择“开始测试后立即执行第1步”。执行时序为“点击第1步开战 → 等待每局战斗秒数 → 执行其余结算/进入关卡步骤 → 再次点击第1步”。如果点击序列只包含战斗结束后的操作，则关闭该选项，工具会沿用“先等待当前战斗结束 → 执行全部步骤”的模式。启动前会逐项显示名称、坐标和等待时间。
+
+### 长稳校准助手
+
+双击 `Start-Longrun-Calibrator.vbs`。该工具独立于正式性能采集，只在校准阶段使用ADB读取手机触摸事件，不会在手机创建文件。校准时会询问第1步是否为“开战”：选择是时，应从开战按钮页面开始，按“开战 → 结算/继续 → 进入下一关”形成完整循环；该模式会随JSON/TXT导入主工具。
+
+坐标模式会探测同时提供 `ABS_MT_POSITION_X/Y` 的触摸设备。每一步按提示直接点击手机按钮，工具把原始触摸范围换算成当前逻辑分辨率下的 `input tap X Y` 坐标；OEM禁止读取触摸事件时自动提供手工输入回退。
+
+计时支持两种模式：
+
+- Enter标记：看到战斗开始和结算界面时各按一次Enter，适用于任何需要战斗内操作的游戏；
+- 手机两次点击：点击开始按钮后等待，战斗结束再点击结算按钮，适用于战斗过程中不需要触屏的自动战斗游戏。
+
+建议测3～5局。工具按“最长一局 + max(5秒, 10%)”生成安全的 `recommendedBattleSeconds`。输出位于：
+
+```text
+Longrun-Calibrator/calibration-results/<游戏>/<时间_设备>/
+├─ longrun-calibration.json
+├─ coordinates.txt
+├─ calibration-log.txt
+├─ taps.csv
+└─ battle-times.csv
+```
+
+`calibration-log.txt` 会在每次记录坐标或完成一局计时后立即更新，其中 `StepCopy=` 是单步坐标，`CurrentPasteLine=` 是截至当前可直接粘贴到主工具的完整序列；即使中途退出，已完成的记录也会保留。完整结束后，`coordinates.txt` 中的 `PasteLine=` 也可直接粘贴到主工具；还可在长稳测试中导入 `longrun-calibration.json`，同时带入点击步骤和建议单局时间。校准结果只存在电脑，纯净打包时会自动排除。
 
 ### memory-recovery
 

@@ -1,7 +1,7 @@
 ﻿[CmdletBinding()]
 param(
     [string]$Config,
-    [ValidateSet('menu','preflight','quick','cleanup','smoke')]
+    [ValidateSet('menu','preflight','quick','cleanup','smoke','batch')]
     [string]$Action = 'menu'
 )
 
@@ -18,6 +18,8 @@ $script:CurrentProfile=$null
 $script:DeviceInfo=[pscustomobject]@{connected=$false;serial='';manufacturer='';model='';resolution='unknown';foregroundPackage='';message='not scanned'}
 
 Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Core.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Calibration.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Batch.psm1') -Force
 
 if(-not ('AndroidGamePerfKit.HotkeyCancel' -as [type])){
     Add-Type -TypeDefinition @'
@@ -49,7 +51,7 @@ namespace AndroidGamePerfKit {
 function Write-LauncherHeader {
     Clear-Host
     Write-Host '============================================================' -ForegroundColor DarkCyan
-    Write-Host ' AndroidGamePerfKit v1.4.6 - 运行时配置控制台' -ForegroundColor Cyan
+    Write-Host ' AndroidGamePerfKit v1.6.0 - 运行时配置控制台' -ForegroundColor Cyan
     Write-Host '============================================================' -ForegroundColor DarkCyan
     if($script:CurrentProfile){
         $deviceText=if($script:DeviceInfo.connected){"$($script:CurrentProfile.deviceLabel) [$($script:DeviceInfo.serial)]"}else{'未连接或尚未识别'}
@@ -61,7 +63,8 @@ function Write-LauncherHeader {
         Write-Host (" 游戏包名 : {0}" -f $packageText) -ForegroundColor Gray
         Write-Host (" 目标FPS  : {0}" -f $script:CurrentProfile.targetFps) -ForegroundColor Gray
         $long=$script:CurrentProfile.cases.longrun
-        Write-Host (" 长稳参数 : 单局{0}s，点击步骤{1}个" -f $long.automation.battleSeconds,@($long.automation.taps).Count) -ForegroundColor DarkGray
+        $startMode=if($long.automation.PSObject.Properties['startWithFirstTap'] -and [bool]$long.automation.startWithFirstTap){'先点第1步开战'}else{'先等待当前战斗'}
+        Write-Host (" 长稳参数 : 单局{0}s，点击步骤{1}个，{2}" -f $long.automation.battleSeconds,@($long.automation.taps).Count,$startMode) -ForegroundColor DarkGray
     }
     Write-Host '============================================================' -ForegroundColor DarkCyan
 }
@@ -107,8 +110,7 @@ function Update-LauncherDeviceInfo {
         $resolution='unknown';if($sizeText -match '(\d{3,5}x\d{3,5})'){$resolution=$Matches[1]}
         $foreground=''
         if($DetectForeground){
-            $activityText=(Invoke-GpkShell -Config $script:CurrentProfile -Command 'dumpsys activity activities' -AllowFailure).Text
-            if($activityText -match '(?im)mResumedActivity.*?\s([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+)/'){$foreground=$Matches[1]}
+            $foreground=Get-GpkForegroundPackage -Config $script:CurrentProfile
         }
         $label=(($manufacturer+' '+$model).Trim() -replace '\s+','-')
         if([string]::IsNullOrWhiteSpace($label) -or $label -match '^(OK-?)+$'){$label='Android-'+$serial}
@@ -269,7 +271,7 @@ function Wait-LauncherProcess {
 
 function Invoke-KitChild {
     param(
-        [Parameter(Mandatory=$true)][ValidateSet('preflight','run','cleanup')][string]$Command,
+        [Parameter(Mandatory=$true)][ValidateSet('preflight','run','cleanup','batch')][string]$Command,
         [string]$Case,
         [int]$DurationSec=0,
         [switch]$Perfetto,
@@ -342,6 +344,21 @@ function Show-LatestReport {
     if($report){Start-Process $report.FullName}else{Write-Host '尚未找到report.html。' -ForegroundColor Yellow;Pause-Launcher}
 }
 
+function Show-LatestBatchReport {
+    $batchRoot=Join-Path $PSScriptRoot 'batch-reports'
+    if(-not(Test-Path -LiteralPath $batchRoot)){Write-Host '尚未生成批量汇总。' -ForegroundColor Yellow;return}
+    $report=Get-ChildItem -LiteralPath $batchRoot -Filter batch-report.html -File -Recurse|Sort-Object LastWriteTime -Descending|Select-Object -First 1
+    if($report){Start-Process $report.FullName}else{Write-Host '尚未找到batch-report.html。' -ForegroundColor Yellow}
+}
+
+function Invoke-RuntimeBatchReport {
+    Write-LauncherHeader
+    Write-Host '将只读取各次测试的 metadata.json 和 summary.json，不读取大型logcat或Perfetto Trace。' -ForegroundColor Cyan
+    $code=Invoke-KitChild -Command batch
+    if($code -eq 0){Show-LatestBatchReport}
+    Pause-Launcher
+}
+
 function Invoke-QuickValidation {
     if(-not(Test-LauncherTargetReady)){Pause-Launcher;return}
     Write-LauncherHeader
@@ -367,6 +384,61 @@ function Invoke-RuntimeBattle {
     if($code -eq 0){Show-LatestResult 'battle-60s'};Pause-Launcher
 }
 
+function Read-LauncherManualTapSteps {
+    param([int]$MaximumX,[int]$MaximumY,[int]$DefaultCount=1)
+    $count=Read-LauncherInteger -Prompt '一局结束后需要点击几次' -Default ([math]::Max(1,$DefaultCount)) -Minimum 1 -Maximum 12
+    $result=@()
+    for($i=1;$i -le $count;$i++){
+        Write-Host "--- 点击步骤 $i/$count ---" -ForegroundColor Cyan
+        $name=(Read-Host "步骤名称 [tap$i]").Trim();if(-not $name){$name="tap$i"}
+        $x=Read-LauncherInteger -Prompt 'X坐标' -Default ([int]($MaximumX/2)) -Minimum 0 -Maximum $MaximumX
+        $y=Read-LauncherInteger -Prompt 'Y坐标' -Default ([int]($MaximumY/2)) -Minimum 0 -Maximum $MaximumY
+        $delay=Read-LauncherInteger -Prompt '点击后等待（毫秒）' -Default 1500 -Minimum 0 -Maximum 60000
+        $result+=,[pscustomobject][ordered]@{name=$name;x=$x;y=$y;delayMs=$delay}
+    }
+    return @($result)
+}
+
+function Read-LauncherPastedTapSteps {
+    param([int]$MaximumX,[int]$MaximumY)
+    Write-Host '粘贴格式：X,Y,等待毫秒;X,Y,等待毫秒' -ForegroundColor Cyan
+    while($true){
+        $text=(Read-Host '请粘贴点击序列').Trim()
+        try{return @(ConvertFrom-GpkTapSequence -Text $text -MaximumX $MaximumX -MaximumY $MaximumY)}catch{Write-Host $_.Exception.Message -ForegroundColor Yellow}
+    }
+}
+
+function Read-LauncherCalibrationImport {
+    param($Display)
+    while($true){
+        $path=(Read-Host '校准文件路径（longrun-calibration.json或coordinates.txt）').Trim().Trim('"')
+        try{
+            $calibration=Read-GpkLongrunCalibrationFile -Path $path
+            if(@($calibration.taps).Count -eq 0){throw '该校准文件没有点击坐标；可能是仅计时结果。'}
+            $recordedResolution='';$recordedRotation=$null
+            if($calibration.display){
+                if($calibration.display.PSObject.Properties['resolution']){$recordedResolution=[string]$calibration.display.resolution}
+                elseif($calibration.display.PSObject.Properties['logicalWidth'] -and $calibration.display.PSObject.Properties['logicalHeight']){$recordedResolution="$($calibration.display.logicalWidth)x$($calibration.display.logicalHeight)"}
+                if($calibration.display.PSObject.Properties['rotation']){$recordedRotation=[int]$calibration.display.rotation}
+            }
+            $mismatch=($recordedResolution -and $recordedResolution -ne [string]$Display.resolution) -or ($null -ne $recordedRotation -and $recordedRotation -ne [int]$Display.rotation)
+            if($mismatch){
+                Write-Host ("校准屏幕={0}/rotation {1}，当前屏幕={2}/rotation {3}。" -f $recordedResolution,$recordedRotation,$Display.resolution,$Display.rotation) -ForegroundColor Yellow
+                if(-not(Read-LauncherYesNo -Prompt '屏幕状态不一致，仍然导入' -Default $false)){continue}
+            }
+            $validated=@();$index=0
+            foreach($tap in @($calibration.taps)){
+                $index++;$x=[int]$tap.x;$y=[int]$tap.y;$delay=[int]$tap.delayMs
+                if($x -lt 0 -or $x -ge $Display.logicalWidth -or $y -lt 0 -or $y -ge $Display.logicalHeight){throw "第$index步坐标超出当前屏幕范围。"}
+                if($delay -lt 0 -or $delay -gt 60000){throw "第$index步等待时间无效。"}
+                $name=if($tap.PSObject.Properties['name'] -and $tap.name){[string]$tap.name}else{"tap$index"}
+                $validated+=,[pscustomobject][ordered]@{name=$name;x=$x;y=$y;delayMs=$delay}
+            }
+            return [pscustomobject]@{taps=@($validated);recommendedBattleSeconds=[int]$calibration.recommendedBattleSeconds;startWithFirstTap=$calibration.startWithFirstTap;path=$calibration.path}
+        }catch{Write-Host $_.Exception.Message -ForegroundColor Yellow}
+    }
+}
+
 function Invoke-RuntimeLongrun {
     if(-not(Test-LauncherTargetReady)){Pause-Launcher;return}
     Write-LauncherHeader
@@ -374,32 +446,33 @@ function Invoke-RuntimeLongrun {
     $defaultMinutes=[math]::Round(([double]$long.durationSec)/60,2)
     $minutes=Read-LauncherNumber -Prompt '本次长稳总时长（分钟）' -Default $defaultMinutes -Minimum 0.17 -Maximum 240
     $duration=[int][math]::Round($minutes*60)
-    $battleSeconds=Read-LauncherInteger -Prompt '每局战斗等待时间（秒）' -Default ([int]$auto.battleSeconds) -Minimum 1 -Maximum 3600
     $enabled=Read-LauncherYesNo -Prompt '是否自动点击重开下一局' -Default ([bool]$auto.enabled)
-    $taps=@($auto.taps)
+    $taps=@($auto.taps);$battleDefault=[int]$auto.battleSeconds
+    $startWithFirstTap=if($auto.PSObject.Properties['startWithFirstTap']){[bool]$auto.startWithFirstTap}else{$false}
+    if(-not $auto.PSObject.Properties['startWithFirstTap'] -and $taps.Count -gt 0 -and [string]$taps[0].name -match '(?i)战斗|开战|开始|出击|挑战|battle|start|fight'){$startWithFirstTap=$true}
     if($enabled){
-        Write-Host "当前分辨率：$($script:DeviceInfo.resolution)。坐标X从左到右，Y从上到下。" -ForegroundColor Cyan
+        $display=Get-GpkDisplayInfo -Config $script:CurrentProfile
+        Write-Host "当前逻辑分辨率：$($display.resolution)，rotation=$($display.rotation)。坐标X从左到右，Y从上到下。" -ForegroundColor Cyan
         $reuse=$false;if($taps.Count -gt 0){$reuse=Read-LauncherYesNo -Prompt "复用上次的 $($taps.Count) 个点击步骤" -Default $true}
         if(-not $reuse){
-            $count=Read-LauncherInteger -Prompt '一局结束后需要点击几次' -Default ([math]::Max(1,$taps.Count)) -Minimum 1 -Maximum 12
-            $newTaps=@()
-            $maxX=9999;$maxY=9999
-            if($script:DeviceInfo.resolution -match '^(\d+)x(\d+)$'){$maxX=[int]$Matches[1]-1;$maxY=[int]$Matches[2]-1}
-            for($i=1;$i -le $count;$i++){
-                Write-Host "--- 点击步骤 $i/$count ---" -ForegroundColor Cyan
-                $name=(Read-Host "步骤名称 [tap$i]").Trim();if(-not $name){$name="tap$i"}
-                $x=Read-LauncherInteger -Prompt 'X坐标' -Default ([int]($maxX/2)) -Minimum 0 -Maximum $maxX
-                $y=Read-LauncherInteger -Prompt 'Y坐标' -Default ([int]($maxY/2)) -Minimum 0 -Maximum $maxY
-                $delay=Read-LauncherInteger -Prompt '点击后等待（毫秒）' -Default 1500 -Minimum 0 -Maximum 60000
-                $newTaps+=,[pscustomobject][ordered]@{name=$name;x=$x;y=$y;delayMs=$delay}
+            Write-Host '点击步骤来源：[1] 导入校准文件 [2] 粘贴坐标序列 [3] 手工逐项输入' -ForegroundColor Cyan
+            while($true){$source=(Read-Host '请选择 [1]').Trim();if(-not $source){$source='1'};if($source -in @('1','2','3')){break}}
+            switch($source){
+                '1' {$imported=Read-LauncherCalibrationImport -Display $display;$taps=@($imported.taps);if($imported.recommendedBattleSeconds -gt 0){$battleDefault=$imported.recommendedBattleSeconds};if($null -ne $imported.startWithFirstTap){$startWithFirstTap=[bool]$imported.startWithFirstTap}elseif($taps.Count -gt 0 -and [string]$taps[0].name -match '(?i)战斗|开战|开始|出击|挑战|battle|start|fight'){$startWithFirstTap=$true};Write-Host "已导入：$($imported.path)" -ForegroundColor Green}
+                '2' {$taps=@(Read-LauncherPastedTapSteps -MaximumX ($display.logicalWidth-1) -MaximumY ($display.logicalHeight-1))}
+                '3' {$taps=@(Read-LauncherManualTapSteps -MaximumX ($display.logicalWidth-1) -MaximumY ($display.logicalHeight-1) -DefaultCount $taps.Count)}
             }
-            $taps=@($newTaps)
         }
-    }
-    $long.durationSec=$duration;$auto.enabled=$enabled;$auto.battleSeconds=$battleSeconds;$auto.taps=@($taps);Save-LauncherRuntimeProfile
+        Write-Host '点击执行顺序：' -ForegroundColor Cyan
+        for($i=0;$i -lt $taps.Count;$i++){Write-Host ("  {0}. {1}  ({2},{3})  后续等待={4}ms" -f ($i+1),$taps[$i].name,$taps[$i].x,$taps[$i].y,$taps[$i].delayMs)}
+        $startWithFirstTap=Read-LauncherYesNo -Prompt '按 Enter 开始测试后，是否立即执行第1步开战' -Default $startWithFirstTap
+        $battleSeconds=Read-LauncherInteger -Prompt '每局战斗等待时间（秒）' -Default $battleDefault -Minimum 1 -Maximum 3600
+    }else{$battleSeconds=$battleDefault}
+    $long.durationSec=$duration;$auto.enabled=$enabled;$auto.battleSeconds=$battleSeconds;$auto.taps=@($taps);$auto|Add-Member -NotePropertyName startWithFirstTap -NotePropertyValue $startWithFirstTap -Force;Save-LauncherRuntimeProfile
     Write-Host ''
-    Write-Host ("本次参数：总时长{0}秒；每局{1}秒；自动点击={2}；步骤={3}。" -f $duration,$battleSeconds,$enabled,$taps.Count) -ForegroundColor Green
-    Write-Host '请进入第一局稳定战斗。建议新坐标先测试5分钟以内。' -ForegroundColor Yellow
+    Write-Host ("本次参数：总时长{0}秒；每局{1}秒；自动点击={2}；步骤={3}；立即执行第1步={4}。" -f $duration,$battleSeconds,$enabled,$taps.Count,$startWithFirstTap) -ForegroundColor Green
+    if($enabled -and $startWithFirstTap){Write-Host '请停在第1步“开战”按钮可以点击的页面。按 Enter 后，预检完成即点击第1步并开始战斗计时。' -ForegroundColor Yellow}
+    else{Write-Host '请进入第一局稳定战斗。建议新坐标先测试5分钟以内。' -ForegroundColor Yellow}
     Pause-Launcher '准备好后按 Enter 开始'
     [void](Invoke-KitChild -Command run -Case 'longrun' -DurationSec $duration);Pause-Launcher
 }
@@ -512,17 +585,19 @@ function Invoke-MenuChoice {
         '14' {if(Test-Path (Join-Path $PSScriptRoot 'results')){Start-Process explorer.exe (Join-Path $PSScriptRoot 'results')}else{Write-Host '尚未生成results目录。' -ForegroundColor Yellow;Pause-Launcher}}
         '15' {Invoke-RuntimePerfetto}
         '16' {Show-LatestReport}
+        '17' {Invoke-RuntimeBatchReport}
         'S' {[void](Set-LauncherGameAndDevice)}
     }
 }
 
 try{
-    Initialize-LauncherProfile -Requested $Config -SkipDeviceScan:($Action -eq 'smoke')
+    Initialize-LauncherProfile -Requested $Config -SkipDeviceScan:($Action -in @('smoke','batch'))
     switch($Action){
         'preflight'{$code=Invoke-KitChild -Command preflight;exit $code}
         'quick'{Invoke-QuickValidation;exit 0}
         'cleanup'{$code=Invoke-KitChild -Command cleanup;exit $code}
         'smoke'{$code=Invoke-SmokeTest;exit $code}
+        'batch'{$result=Invoke-GpkBatchReport -KitRoot $PSScriptRoot;exit 0}
     }
     while($true){
         Write-LauncherHeader
@@ -542,6 +617,7 @@ try{
         Write-Host ' [14] 打开结果目录'
         Write-Host ' [15] Perfetto专项诊断（5～300秒）' -ForegroundColor Magenta
         Write-Host ' [16] 打开最新自动测试报告' -ForegroundColor Green
+        Write-Host ' [17] 一键汇总全部测试（CSV/JSON/HTML/ZIP）' -ForegroundColor Green
         Write-Host ' [S] 自动识别/更换设备与前台游戏' -ForegroundColor Cyan
         Write-Host ' [0] 退出'
         Write-Host ''

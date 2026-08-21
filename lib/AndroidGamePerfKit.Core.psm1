@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-$script:GpkVersion = '1.4.6'
+$script:GpkVersion = '1.6.0'
 $script:AdbExe = $null
 $script:DeviceSerial = $null
 
@@ -180,6 +180,35 @@ function Select-GpkDevice {
     if ($chosen.state -ne 'device') { throw "Device $($chosen.serial) is $($chosen.state), not authorized and ready." }
     $script:DeviceSerial = $chosen.serial
     return $chosen.serial
+}
+
+function ConvertFrom-GpkForegroundPackageText {
+    param([AllowNull()][string]$Text)
+    if([string]::IsNullOrWhiteSpace($Text)){return ''}
+    $fieldPattern='(?im)^\s*(?:topResumedActivity|mResumedActivity|ResumedActivity|mCurrentFocus|mFocusedWindow|mFocusedApp|FocusedApplication)\b[^\r\n]*?\b(?<package>[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)/[A-Za-z0-9_.$]+'
+    if($Text -match $fieldPattern){return [string]$Matches['package']}
+    $activityPattern='(?im)^\s*(?:ACTIVITY|ComponentInfo\{)\s*(?<package>[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)/[A-Za-z0-9_.$]+'
+    if($Text -match $activityPattern){return [string]$Matches['package']}
+    $componentOnlyPattern='(?im)^\s*(?<package>[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)/[A-Za-z0-9_.$]+\s*$'
+    if($Text -match $componentOnlyPattern){return [string]$Matches['package']}
+    return ''
+}
+
+function Get-GpkForegroundPackage {
+    param([Parameter(Mandatory=$true)]$Config)
+    $commands=@(
+        'dumpsys activity activities',
+        'dumpsys window windows',
+        'dumpsys window displays',
+        'cmd activity get-top-activity',
+        'dumpsys activity top'
+    )
+    foreach($command in $commands){
+        $result=Invoke-GpkShell -Config $Config -Command $command -AllowFailure -TimeoutSec 15
+        $package=ConvertFrom-GpkForegroundPackageText -Text $result.Text
+        if(-not [string]::IsNullOrWhiteSpace($package)){return $package}
+    }
+    return ''
 }
 
 function New-GpkRunContext {

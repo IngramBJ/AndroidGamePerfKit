@@ -24,7 +24,9 @@ if(-not $SkipTests){
 
 $excludedRelative=@(
     '.state\',
-    'results\'
+    'results\',
+    'batch-reports\',
+    'Longrun-Calibrator\calibration-results\'
 )
 $excludedFiles=@(
     'configs\config-artofwar.json'
@@ -68,15 +70,19 @@ try{
 
 $required=@(
     'AndroidGamePerfKit/Start-AndroidGamePerfKit.vbs',
+    'AndroidGamePerfKit/Start-Longrun-Calibrator.vbs',
+    'AndroidGamePerfKit/Longrun-Calibrator/Longrun-Calibrator.ps1',
     'AndroidGamePerfKit/configs/generic-example.json',
     'AndroidGamePerfKit/lib/AndroidGamePerfKit.Core.psm1',
+    'AndroidGamePerfKit/lib/AndroidGamePerfKit.Batch.psm1',
+    'AndroidGamePerfKit/lib/AndroidGamePerfKit.Calibration.psm1',
     'AndroidGamePerfKit/perfetto/profiles/balanced.pbtxt'
 )
 $read=[IO.Compression.ZipFile]::OpenRead($destinationFull)
 try{
     $names=@($read.Entries|ForEach-Object FullName)
     foreach($name in $required){if($name -notin $names){throw "Release ZIP is missing: $name"}}
-    if($names|Where-Object{$_ -match '/(?:results|\.state)/'}){throw 'Release ZIP unexpectedly contains runtime data.'}
+    if($names|Where-Object{$_ -match '/(?:results|batch-reports|\.state|calibration-results)/'}){throw 'Release ZIP unexpectedly contains runtime data.'}
 }finally{$read.Dispose()}
 
 Write-Host "Clean release created: $destinationFull" -ForegroundColor Green

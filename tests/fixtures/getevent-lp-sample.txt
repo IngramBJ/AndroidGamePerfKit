@@ -1,0 +1,11 @@
+add device 1: /dev/input/event1
+  name:     "gpio-keys"
+  events:
+    KEY (0001): 0074
+add device 2: /dev/input/event6
+  name:     "huawei-touchscreen"
+  events:
+    ABS (0003):
+      ABS_MT_POSITION_X : value 0, min 0, max 1079, fuzz 0, flat 0, resolution 0
+      ABS_MT_POSITION_Y : value 0, min 0, max 2399, fuzz 0, flat 0, resolution 0
+      ABS_MT_TRACKING_ID: value 0, min 0, max 65535, fuzz 0, flat 0, resolution 0

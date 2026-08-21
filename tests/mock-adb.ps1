@@ -31,6 +31,28 @@ if($a[0] -eq 'shell'){
     switch -Regex ($cmd){
         '^getprop$' {'[ro.product.model]: [Mock Phone]';exit 0}
         '^getprop ro.build.version.sdk$' {'34';exit 0}
+        '^getprop ro.product.manufacturer$' {'MockCorp';exit 0}
+        '^getprop ro.product.model$' {'Mock Phone';exit 0}
+        '^wm size$' {'Physical size: 1080x2400';exit 0}
+        '^dumpsys input$' {'SurfaceOrientation: 0';exit 0}
+        '^dumpsys display$' {'mCurrentOrientation=0';exit 0}
+        '^settings get system user_rotation$' {'0';exit 0}
+        '^dumpsys activity activities$' {'mResumedActivity: ActivityRecord{123 u0 com.example.game/com.example.game.MainActivity t1}';exit 0}
+        '^getevent -lp$' {@'
+add device 1: /dev/input/event6
+  name:     "mock-touchscreen"
+  events:
+    ABS (0003):
+      ABS_MT_POSITION_X : value 0, min 0, max 1079, fuzz 0, flat 0, resolution 0
+      ABS_MT_POSITION_Y : value 0, min 0, max 2399, fuzz 0, flat 0, resolution 0
+'@;exit 0}
+        '^getevent -lt /dev/input/event6$' {@'
+[  200.100000] /dev/input/event6: EV_ABS       ABS_MT_TRACKING_ID   00000031
+[  200.100100] /dev/input/event6: EV_ABS       ABS_MT_POSITION_X    0000021c
+[  200.100200] /dev/input/event6: EV_ABS       ABS_MT_POSITION_Y    000004b0
+[  200.180000] /dev/input/event6: EV_ABS       ABS_MT_TRACKING_ID   ffffffff
+[  200.180100] /dev/input/event6: EV_SYN       SYN_REPORT           00000000
+'@;exit 0}
         '^pm path ' {'package:/data/app/mock/base.apk';exit 0}
         '^pidof ' {'1234';exit 0}
         '^cat /proc/meminfo$' {@'

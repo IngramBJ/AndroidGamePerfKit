@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('list','preflight','run','cleanup')]
+    [ValidateSet('list','preflight','run','cleanup','batch')]
     [string]$Command = 'list',
 
     [string]$Case,
@@ -8,6 +8,8 @@ param(
     [string]$Config = (Join-Path $PSScriptRoot 'configs\generic-example.json'),
 
     [string]$GameName,
+
+    [string]$ResultsRoot,
 
     [int]$DurationSec = 0,
 
@@ -27,6 +29,7 @@ Set-StrictMode -Version 2.0
 
 Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Core.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Cases.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'lib\AndroidGamePerfKit.Batch.psm1') -Force
 
 try {
     switch ($Command) {
@@ -46,6 +49,9 @@ try {
             $cfg = Read-GpkConfig -Path $Config
             if($GameName){$cfg.gameName=$GameName}
             Invoke-GpkCleanup -KitRoot $PSScriptRoot -Config $cfg -VerboseOutput
+        }
+        'batch' {
+            [void](Invoke-GpkBatchReport -KitRoot $PSScriptRoot -ResultsRoot $ResultsRoot)
         }
         'run' {
             if ([string]::IsNullOrWhiteSpace($Case)) {

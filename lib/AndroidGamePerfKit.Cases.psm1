@@ -82,17 +82,43 @@ function Invoke-GpkLongrunCase {
         Write-Host 'Longrun automation is disabled in config; collect while you operate the game manually.' -ForegroundColor Yellow
         Wait-GpkDuration -Seconds $duration -Activity 'Longrun collection'
     } else {
-        $battleSec=[int]$cc.automation.battleSeconds;$deadline=(Get-Date).AddSeconds($duration);$round=0
-        while((Get-Date) -lt $deadline){
-            $remain=[int][math]::Floor(($deadline-(Get-Date)).TotalSeconds)
-            $wait=[math]::Min($battleSec,[math]::Max(0,$remain));if($wait -gt 0){Wait-GpkDuration -Seconds $wait -Activity "Longrun round $($round+1)"}
-            if((Get-Date) -ge $deadline){break}
-            foreach($tap in @($cc.automation.taps)){
-                $x=[int]$tap.x;$y=[int]$tap.y
-                Invoke-GpkShell -Config $cfg -Command "input tap $x $y" -AllowFailure|Out-Null
-                if($tap.delayMs){Start-Sleep -Milliseconds ([int]$tap.delayMs)}
+        $battleSec=[int]$cc.automation.battleSeconds;$deadline=(Get-Date).AddSeconds($duration);$round=0;$taps=@($cc.automation.taps)
+        $startWithFirstTap=$false
+        if($cc.automation.PSObject.Properties['startWithFirstTap']){$startWithFirstTap=[bool]$cc.automation.startWithFirstTap}
+        if($startWithFirstTap){
+            $stopAtDeadline=$false
+            while((Get-Date) -lt $deadline){
+                $round++
+                for($index=0;$index -lt $taps.Count;$index++){
+                    if((Get-Date) -ge $deadline){$stopAtDeadline=$true;break}
+                    $tap=$taps[$index];$x=[int]$tap.x;$y=[int]$tap.y;$name=if($tap.PSObject.Properties['name']){[string]$tap.name}else{"tap$($index+1)"}
+                    $tapResult=Invoke-GpkShell -Config $cfg -Command "input tap $x $y" -AllowFailure
+                    Add-GpkMarker $Context 'automation_tap' "round=$round;step=$($index+1);name=$name;x=$x;y=$y;exit=$($tapResult.ExitCode)"
+                    if($tapResult.ExitCode -ne 0){throw "Automatic tap failed at round $round, step $($index+1): $($tapResult.Text)"}
+                    if($index -eq 0){
+                        $remain=[int][math]::Floor(($deadline-(Get-Date)).TotalSeconds)
+                        $wait=[math]::Min($battleSec,[math]::Max(0,$remain))
+                        if($wait -gt 0){Wait-GpkDuration -Seconds $wait -Activity "Longrun battle $round"}else{$stopAtDeadline=$true;break}
+                    }elseif($tap.delayMs){Start-Sleep -Milliseconds ([int]$tap.delayMs)}
+                }
+                Add-GpkMarker $Context 'round_restart' "round=$round"
+                if($stopAtDeadline){break}
             }
-            $round++;Add-GpkMarker $Context 'round_restart' "round=$round"
+        }else{
+            while((Get-Date) -lt $deadline){
+                $remain=[int][math]::Floor(($deadline-(Get-Date)).TotalSeconds)
+                $wait=[math]::Min($battleSec,[math]::Max(0,$remain));if($wait -gt 0){Wait-GpkDuration -Seconds $wait -Activity "Longrun round $($round+1)"}
+                if((Get-Date) -ge $deadline){break}
+                $index=0
+                foreach($tap in $taps){
+                    $index++;$x=[int]$tap.x;$y=[int]$tap.y;$name=if($tap.PSObject.Properties['name']){[string]$tap.name}else{"tap$index"}
+                    $tapResult=Invoke-GpkShell -Config $cfg -Command "input tap $x $y" -AllowFailure
+                    Add-GpkMarker $Context 'automation_tap' "round=$($round+1);step=$index;name=$name;x=$x;y=$y;exit=$($tapResult.ExitCode)"
+                    if($tapResult.ExitCode -ne 0){throw "Automatic tap failed at round $($round+1), step ${index}: $($tapResult.Text)"}
+                    if($tap.delayMs){Start-Sleep -Milliseconds ([int]$tap.delayMs)}
+                }
+                $round++;Add-GpkMarker $Context 'round_restart' "round=$round"
+            }
         }
     }
     Add-GpkMarker $Context 'longrun_end'
